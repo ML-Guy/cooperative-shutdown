@@ -83,8 +83,8 @@ def lock(user):
 			with open(LOCK_FILE, "w") as f:
 				lock_status = {user:True}
 				json.dump(lock_status,f)
-		
-		os.chmod(LOCK_FILE, 0o777)
+		if os.geteuid() == os.stat(LOCK_FILE).st_uid:
+			os.chmod(LOCK_FILE, 0o777)
 	except Exception as e:
 		print("ERROR: Lock: ",e)
 		print("Lock: try again")
@@ -106,7 +106,8 @@ def release_lock(user):
 				json.dump(lock_status,f)
 				f.truncate()
 
-			os.chmod(LOCK_FILE, 0o777)
+			if os.geteuid() == os.stat(LOCK_FILE).st_uid:
+				os.chmod(LOCK_FILE, 0o777)
 		else:
 			lock_status= {}
 	except Exception as e:
