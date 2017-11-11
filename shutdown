@@ -59,8 +59,10 @@ alias init='{path}'
 
 	bash_injection = bash_injection.format(path=os.path.realpath(__file__))
 	with open(GLOBAL_BASH_FILE,"a") as f:
-		print(bash_injection)
 		f.write(bash_injection)
+	
+	#Make shutdown file executable
+	os.chmod(os.path.realpath(__file__), 0o777)
 
 	print("{bashrc} setup completed. Source {bashrc} or start new terminal.".format(bashrc=GLOBAL_BASH_FILE))
 
