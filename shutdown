@@ -1,0 +1,162 @@
+#!/usr/bin/python
+import getpass
+import subprocess
+import argparse
+import os
+import sys
+import json
+
+LOCK_FILE = "/tmp/shutdown-lock.json"
+GLOBAL_BASH_FILE = "/etc/bash.bashrc"
+
+def main(args):
+	doShutdown = True
+
+	if args.setup:
+		setup()
+		doShutdown = False
+
+	if args.lock:
+		lock(args.user)
+		doShutdown = False
+
+
+	if args.release:
+		release_lock(args.user)
+		doShutdown = False
+
+	if args.info:
+		info()
+		doShutdown = False
+
+	if doShutdown:
+		print("shutdown requested: {}".format(args.user))
+		shutdownLock = release_lock(args.user)
+		if not shutdownLock:
+			if args.reboot:
+				system_reboot()
+			else:
+				system_shutdown()
+		else:
+			info()
+
+def setup():
+
+	# Ensure we have elevated permission to write bashrc file
+	if os.geteuid() != 0:
+	    os.execvp('sudo', ['sudo', 'python'] + sys.argv)  # final version 
+
+	bash_injection = \
+"""
+#######################################################################
+# Cooperative shutdown setup
+alias shutdown='{path}'
+alias poweroff='{path}'
+alias reboot='{path}'
+alias init='{path}'
+#######################################################################
+"""
+
+	bash_injection = bash_injection.format(path=os.path.realpath(__file__))
+	with open(GLOBAL_BASH_FILE,"a") as f:
+		print(bash_injection)
+		f.write(bash_injection)
+
+	print("{bashrc} setup completed. Source {bashrc} or start new terminal.".format(bashrc=GLOBAL_BASH_FILE))
+
+def lock(user):
+	user = user.lower()
+	print("shutdown lock requested: {}".format(user))
+
+	try:
+		if os.path.isfile(LOCK_FILE):
+			with open(LOCK_FILE, "r+") as f:
+				lock_status = json.load(f)
+				lock_status[user] = True
+
+				f.seek(0)
+				json.dump(lock_status,f)
+				f.truncate()
+		else:
+			with open(LOCK_FILE, "w") as f:
+				lock_status = {user:True}
+				json.dump(lock_status,f)
+		
+		os.chmod(LOCK_FILE, 0o777)
+	except Exception as e:
+		print("ERROR: Lock: ",e)
+		print("Lock: try again")
+
+
+def release_lock(user):
+	user = user.lower()
+	print("releasing shutdown lock: {}".format(user))
+
+	lock_status = {"ERROR":True}	
+	try:
+		if os.path.isfile(LOCK_FILE):
+			with open(LOCK_FILE, "r+") as f:
+				lock_status = json.load(f)
+				if lock_status:
+					lock_status.pop(user, None)
+				
+				f.seek(0)
+				json.dump(lock_status,f)
+				f.truncate()
+
+			os.chmod(LOCK_FILE, 0o777)
+		else:
+			lock_status= {}
+	except Exception as e:
+		print("ERROR: Release Lock: ",e)
+		print("Release Lock: try again")
+
+	return lock_status
+
+def info():
+	lock_status = {}
+	try:
+		if os.path.isfile(LOCK_FILE):
+			with open(LOCK_FILE) as f:
+				lock_status = json.load(f)
+		
+		if lock_status:
+			print("Info: shutdown is locked.")
+			print ("Info: current locks: {}".format(lock_status))
+		else:
+			print("Info: shutdown is unlocked.")
+					
+	except Exception as e:
+		print("ERROR: Info: ",e)
+		print("Info: try again")
+
+	
+
+def system_shutdown():
+	print("Performing shutdown...")
+	return_code = subprocess.call("sudo /sbin/shutdown", shell=True)
+	if return_code != 0:
+		print("Shutdown failed!! Probably user doesn't have sufficient permissions. Contact system administrator for to perform shutdown.")
+
+def system_reboot():
+	print("Performing reboot...")
+	return_code = subprocess.call("sudo /sbin/reboot", shell=True)
+	if return_code != 0:
+		print("reboot failed!! Probably user doesn't have sufficient permissions. Contact system administrator for to perform shutdown.")
+
+
+if __name__=="__main__":
+	parser = argparse.ArgumentParser(description='Co-operative shutdown between multiple users')
+	parser.add_argument('-u','--user', action="store", default=getpass.getuser(), help='user')
+	parser.add_argument('-l','--lock', action="store_true", default=False, 
+		help='lock to disable others from shutting down system')
+	parser.add_argument('-r','--release', action="store_true", default=False, 
+		help='only release lock, do not perform shutdown.')
+	parser.add_argument('-x','--reboot', action="store_true", default=False, 
+		help='reboot the system.')
+	parser.add_argument('-i','--info', action="store_true", default=False, 
+		help='get current shutdown locks info')
+	parser.add_argument('--setup', action="store_true", default=False, 
+		help='put entry into /etc/.bashrc to substitute this in place of default shutdown commands')
+
+	main(parser.parse_args())
