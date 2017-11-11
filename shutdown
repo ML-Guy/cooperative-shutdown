@@ -52,7 +52,7 @@ def setup():
 # Cooperative shutdown setup
 alias shutdown='{path}'
 alias poweroff='{path}'
-alias reboot='{path}'
+alias reboot='{path} --reboot'
 alias init='{path}'
 #######################################################################
 """
